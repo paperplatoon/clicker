@@ -58,17 +58,50 @@ export function produceResources(gameState, deltaTime) {
     const config = gameState.config;
     const MAX_VALUE = config.maxRegionValue;
     const resourceRateAt100 = config.resourceRateAt100;
+    const regionsPerRow = config.regionsPerRow;
+    const adjacencyBonus = config.adjacencyBonus;
     
     gameState.regions.forEach(region => {
+        // Skip if region has no value
+        if (region.currentValue <= 0) {
+            region.productionRatePerSecond = 0;
+            return;
+        }
+        
         // Get resource type based on region type
         const resourceType = getResourceTypeFromRegion(region.type);
         
-        // Calculate production rate (only for regions with positive values)
+        // Calculate base production rate
         // Linear scaling based on config.resourceRateAt100
         let productionRatePerSecond = 0;
         
         if (region.currentValue >= 10) {
             productionRatePerSecond = (region.currentValue / MAX_VALUE) * resourceRateAt100;
+        }
+        
+        // Calculate adjacency bonus
+        const adjacentRegions = getAdjacentRegions(region.id, gameState);
+        let adjacentBonus = 0;
+        
+        // Count adjacent regions with conversion > 0
+        let convertedAdjacentRegions = 0;
+        adjacentRegions.forEach(adjRegion => {
+            if (adjRegion && adjRegion.currentValue > 0) {
+                convertedAdjacentRegions++;
+            }
+        });
+        
+        // Apply adjacency bonus
+        if (convertedAdjacentRegions > 0) {
+            adjacentBonus = productionRatePerSecond * (convertedAdjacentRegions * adjacencyBonus);
+            productionRatePerSecond += adjacentBonus;
+            
+            // Store adjacency info for display
+            region.adjacentConvertedCount = convertedAdjacentRegions;
+            region.adjacencyBonus = adjacentBonus;
+        } else {
+            region.adjacentConvertedCount = 0;
+            region.adjacencyBonus = 0;
         }
         
         // Store the production rate for display
@@ -81,6 +114,37 @@ export function produceResources(gameState, deltaTime) {
         // Add resources
         gameState.resources[resourceType] += production;
     });
+}
+
+// Get adjacent regions for a given region ID
+function getAdjacentRegions(regionId, gameState) {
+    const regionsPerRow = gameState.config.regionsPerRow;
+    const totalRegions = gameState.regions.length;
+    const regionIndex = regionId - 1; // Convert to 0-based index
+    
+    // Calculate row and column
+    const row = Math.floor(regionIndex / regionsPerRow);
+    const col = regionIndex % regionsPerRow;
+    
+    // Find adjacent region indices (up, right, down, left)
+    const adjacentIndices = [
+        // Up
+        row > 0 ? regionIndex - regionsPerRow : null,
+        // Right
+        col < regionsPerRow - 1 ? regionIndex + 1 : null,
+        // Down
+        row < Math.ceil(totalRegions / regionsPerRow) - 1 ? regionIndex + regionsPerRow : null,
+        // Left
+        col > 0 ? regionIndex - 1 : null
+    ];
+    
+    // Get the actual region objects
+    return adjacentIndices.map(index => {
+        if (index === null || index < 0 || index >= totalRegions) {
+            return null;
+        }
+        return gameState.regions[index];
+    }).filter(region => region !== null);
 }
 
 // Calculate total conversion percentage

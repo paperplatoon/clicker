@@ -4,7 +4,7 @@ export function createGameState() {
         // Game configuration
         config: {
             // Region settings
-            maxRegionValue: 100, // Changed from 200 to 100
+            maxRegionValue: 100,
             regionsPerRow: 10,
             unitPerClick: 1,
             
@@ -16,6 +16,7 @@ export function createGameState() {
             
             // Resource settings
             resourceRateAt100: 1.0, // Resource per second when region is at 100 value
+            adjacencyBonus: 1.0, // 100% bonus for each adjacent converted region
             
             // Item costs
             thoughtCostForIntellectual: 20

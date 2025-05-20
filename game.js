@@ -1,6 +1,6 @@
 // game.js - Core game logic
 import { createGameState } from './state.js';
-import { renderUI, setRegionBackgroundColor, capitalizeFirstLetter } from './ui.js';
+import { renderUI, setRegionBackgroundColor, capitalizeFirstLetter, handleIntellectualBadgeClick } from './ui.js';
 import { 
     handleRegionClick, 
     setupResourceHoverEvents, 
@@ -24,6 +24,9 @@ export function initializeGame() {
     
     // Create initial game state
     gameState = createGameState();
+    
+    // Store gameState globally for access from event handlers
+    window.gameState = gameState;
     
     // Initial render
     renderUI(appElement, gameState);
@@ -80,90 +83,82 @@ function updateGameState(deltaTime) {
     produceResources(gameState, deltaTime);
 }
 
-
 // Update the UI to reflect current game state
 function updateUI() {
     // Update region values
     gameState.regions.forEach(region => {
         const regionElement = document.getElementById(`region-${region.id}`);
         if (regionElement) {
-            // Handle unconverted vs converted regions
-            if (region.currentValue <= 0) {
-                // Unconverted region - all black, no text
-                regionElement.style.backgroundColor = '#000000';
+            // Update background color based on conversion value
+            const opacity = region.currentValue / gameState.config.maxRegionValue;
+            setRegionBackgroundColor(regionElement, region.type, opacity);
+            
+            // Update value display
+            const valueElement = regionElement.querySelector('.region-value');
+            if (valueElement) {
+                valueElement.textContent = Math.floor(region.currentValue);
+                valueElement.style.display = region.currentValue > 0 ? 'block' : 'none';
+            }
+            
+            // Update type display
+            const typeElement = regionElement.querySelector('.region-type');
+            if (typeElement) {
+                typeElement.style.display = region.currentValue > 0 ? 'block' : 'none';
+            }
+            
+            // Update conversion rate display
+            const conversionRateElement = regionElement.querySelector('.region-conversion-rate');
+            if (conversionRateElement) {
+                conversionRateElement.style.display = region.currentValue > 0 ? 'block' : 'none';
                 
-                // Clear content but keep intellectual container
-                const intellectualContainer = regionElement.querySelector('.intellectual-container');
-                regionElement.innerHTML = '';
-                
-                if (intellectualContainer) {
-                    regionElement.appendChild(intellectualContainer);
+                if (region.conversionRate === 0) {
+                    conversionRateElement.textContent = `0.0/s`;
+                    conversionRateElement.style.color = '#aaaaaa';
                 } else {
-                    // Re-add intellectual container if needed
-                    const newContainer = document.createElement('div');
-                    newContainer.className = 'intellectual-container';
-                    newContainer.id = `intellectuals-${region.id}`;
-                    regionElement.appendChild(newContainer);
+                    const ratePrefix = region.conversionRate >= 0 ? '+' : '';
+                    conversionRateElement.textContent = `${ratePrefix}${region.conversionRate.toFixed(1)}/s`;
+                    conversionRateElement.style.color = region.conversionRate >= 0 ? '#69db7c' : '#ff6b6b';
                 }
-            } else {
-                // Converted region - update values
-                
-                // Update background color based on conversion value
-                const opacity = region.currentValue / gameState.config.maxRegionValue;
-                setRegionBackgroundColor(regionElement, region.type, opacity);
-                
-                // Check if we need to add initial elements (first time above 0)
-                if (!regionElement.querySelector('.region-value')) {
-                    // Create value display
-                    const valueElement = document.createElement('div');
-                    valueElement.className = 'region-value';
-                    regionElement.appendChild(valueElement);
-                    
-                    // Create type display
-                    const typeElement = document.createElement('div');
-                    typeElement.className = 'region-type';
-                    typeElement.textContent = capitalizeFirstLetter(region.type);
-                    regionElement.appendChild(typeElement);
-                    
-                    // Create conversion rate display
-                    const conversionRateElement = document.createElement('div');
-                    conversionRateElement.className = 'region-conversion-rate';
-                    regionElement.appendChild(conversionRateElement);
-                    
-                    // Create production rate display
-                    const prodRateElement = document.createElement('div');
-                    prodRateElement.className = 'region-production-rate';
-                    regionElement.appendChild(prodRateElement);
-                }
-                
-                // Update value display
-                const valueElement = regionElement.querySelector('.region-value');
-                if (valueElement) {
-                    valueElement.textContent = Math.floor(region.currentValue);
-                }
-                
-                // Update conversion rate display
-                const conversionRateElement = regionElement.querySelector('.region-conversion-rate');
-                if (conversionRateElement) {
-                    if (region.conversionRate === 0) {
-                        conversionRateElement.textContent = `0.0/s`;
-                        conversionRateElement.style.color = '#aaaaaa';
-                    } else {
-                        const ratePrefix = region.conversionRate >= 0 ? '+' : '';
-                        conversionRateElement.textContent = `${ratePrefix}${region.conversionRate.toFixed(1)}/s`;
-                        conversionRateElement.style.color = region.conversionRate >= 0 ? '#69db7c' : '#ff6b6b';
-                    }
-                }
-                
-                // Update production rate display
-                const prodRateElement = regionElement.querySelector('.region-production-rate');
-                if (prodRateElement) {
-                    prodRateElement.textContent = `+${region.productionRatePerSecond.toFixed(1)} ${capitalizeFirstLetter(region.producedResourceType)}/s`;
+            }
+            
+            // Update production rate display
+            const prodRateElement = regionElement.querySelector('.region-production-rate');
+            if (prodRateElement) {
+                prodRateElement.style.display = region.currentValue > 0 ? 'block' : 'none';
+                prodRateElement.textContent = `+${region.productionRatePerSecond.toFixed(1)} ${capitalizeFirstLetter(region.producedResourceType)}/s`;
+            }
+            
+            // Update adjacency bonus display
+            const adjacencyElement = regionElement.querySelector('.region-adjacency-bonus');
+            if (adjacencyElement) {
+                if (region.adjacentConvertedCount > 0 && region.currentValue > 0) {
+                    adjacencyElement.style.display = 'block';
+                    adjacencyElement.textContent = `+${region.adjacencyBonus.toFixed(1)} (${region.adjacentConvertedCount} adj)`;
+                } else {
+                    adjacencyElement.style.display = 'none';
                 }
             }
             
             // Update intellectual badge in container
-            updateIntellectualBadge(region);
+            const container = document.getElementById(`intellectuals-${region.id}`);
+            if (container) {
+                container.innerHTML = '';
+                
+                if (region.intellectuals > 0) {
+                    const badge = document.createElement('div');
+                    badge.className = 'intellectual-badge';
+                    badge.dataset.regionId = region.id;
+                    badge.textContent = region.intellectuals;
+                    badge.title = "Click to move an intellectual";
+                    
+                    // Make intellectual badge draggable
+                    badge.addEventListener('mousedown', (e) => {
+                        handleIntellectualBadgeClick(e, region.id, gameState);
+                    });
+                    
+                    container.appendChild(badge);
+                }
+            }
         }
     });
     

@@ -1,4 +1,172 @@
-// ui.js - UI rendering and updates
+// Function to handle intellectual badge click (to drag an intellectual)
+export function handleIntellectualBadgeClick(event, regionId, gameState) {
+    // Find the region
+    const region = gameState.regions.find(r => r.id === regionId);
+    
+    // Only proceed if region has intellectuals
+    if (!region || region.intellectuals <= 0) return;
+    
+    // Create a new temporary draggable intellectual
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = rect.left;
+    const y = rect.top;
+    
+    // Create a temporary intellectual to drag (without actually removing it from the region yet)
+    const tempIntellectual = {
+        id: 'temp-' + Date.now(),
+        sourceRegionId: regionId,
+        type: 'intellectual',
+        x: x,
+        y: y
+    };
+    
+    // Create DOM element for the intellectual
+    const intellectualElement = document.createElement('div');
+    intellectualElement.className = 'draggable intellectual temp-intellectual';
+    intellectualElement.id = `intellectual-${tempIntellectual.id}`;
+    intellectualElement.dataset.intellectualId = tempIntellectual.id;
+    intellectualElement.dataset.sourceRegionId = regionId;
+    intellectualElement.textContent = 'I';
+    intellectualElement.style.left = `${x}px`;
+    intellectualElement.style.top = `${y}px`;
+    
+    document.body.appendChild(intellectualElement);
+    
+    // Setup drag events for this intellectual
+    setupDragForTempIntellectual(intellectualElement, gameState);
+    
+    // Prevent propagation to avoid triggering region click
+    event.stopPropagation();
+}
+
+// Setup drag functionality specifically for temp intellectuals (from region to region)
+function setupDragForTempIntellectual(element, gameState) {
+    let isDragging = false;
+    let offsetX, offsetY;
+    
+    // Mouse down - start dragging
+    const handleMouseDown = (e) => {
+        isDragging = true;
+        offsetX = e.clientX - element.getBoundingClientRect().left;
+        offsetY = e.clientY - element.getBoundingClientRect().top;
+        element.style.zIndex = '1000';
+        
+        // Prevent default behaviors
+        e.preventDefault();
+    };
+    
+    // Mouse move - move element
+    const handleMouseMove = (e) => {
+        if (!isDragging) return;
+        
+        const x = e.clientX - offsetX;
+        const y = e.clientY - offsetY;
+        
+        element.style.left = `${x}px`;
+        element.style.top = `${y}px`;
+    };
+    
+    // Mouse up - stop dragging and check for drop
+    const handleMouseUp = (e) => {
+        if (!isDragging) return;
+        
+        isDragging = false;
+        element.style.zIndex = '100';
+        
+        // Check if dropped on a region
+        const sourceRegionId = parseInt(element.dataset.sourceRegionId);
+        checkDropForTempIntellectual(e.clientX, e.clientY, sourceRegionId, gameState);
+        
+        // Remove the temporary element
+        element.remove();
+        
+        // Remove event listeners
+        element.removeEventListener('mousedown', handleMouseDown);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    // Add event listeners
+    element.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    
+    // Trigger mousedown to start dragging immediately
+    element.dispatchEvent(new MouseEvent('mousedown', { 
+        clientX: parseInt(element.style.left), 
+        clientY: parseInt(element.style.top),
+        bubbles: true
+    }));
+}
+
+// Check if a temporary intellectual is dropped on a region
+function checkDropForTempIntellectual(x, y, sourceRegionId, gameState) {
+    const regions = document.querySelectorAll('.region');
+    
+    // Check each region
+    for (const regionElement of regions) {
+        const rect = regionElement.getBoundingClientRect();
+        
+        // Check if coordinates are within the region
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+            const targetRegionId = parseInt(regionElement.dataset.regionId);
+            
+            // Don't allow dropping on the source region
+            if (targetRegionId === sourceRegionId) {
+                return;
+            }
+            
+            // Transfer intellectual between regions
+            transferIntellectual(sourceRegionId, targetRegionId, gameState);
+            break;
+        }
+    }
+}
+
+// Transfer an intellectual from one region to another
+function transferIntellectual(sourceRegionId, targetRegionId, gameState) {
+    const sourceRegion = gameState.regions.find(r => r.id === sourceRegionId);
+    const targetRegion = gameState.regions.find(r => r.id === targetRegionId);
+    
+    if (sourceRegion && targetRegion && sourceRegion.intellectuals > 0) {
+        // Remove from source
+        sourceRegion.intellectuals--;
+        
+        // Add to target
+        targetRegion.intellectuals++;
+        
+        // Update displays
+        updateIntellectualBadge(sourceRegion);
+        updateIntellectualBadge(targetRegion);
+        
+        return true;
+    }
+    
+    return false;
+}
+
+// Update intellectual badge display
+function updateIntellectualBadge(region) {
+    const container = document.getElementById(`intellectuals-${region.id}`);
+    if (container) {
+        container.innerHTML = '';
+        
+        if (region.intellectuals > 0) {
+            const badge = document.createElement('div');
+            badge.className = 'intellectual-badge';
+            badge.dataset.regionId = region.id;
+            badge.textContent = region.intellectuals;
+            badge.title = "Click to move an intellectual";
+            
+            // Make intellectual badge draggable
+            badge.addEventListener('mousedown', (e) => {
+                handleIntellectualBadgeClick(e, region.id, window.gameState);
+            });
+            
+            container.appendChild(badge);
+        }
+    }
+}// ui.js - UI rendering and updates
 import { calculateTotalConversion } from './mechanics.js';
 
 // Export helper functions for other modules
@@ -156,33 +324,46 @@ function createRegionElement(region, gameState) {
         // Calculate transparency based on current value
         const opacity = region.currentValue / gameState.config.maxRegionValue;
         setRegionBackgroundColor(regionElement, region.type, opacity);
-        
-        // Create and add value display
-        const valueElement = document.createElement('div');
-        valueElement.className = 'region-value';
-        valueElement.textContent = Math.floor(region.currentValue);
-        regionElement.appendChild(valueElement);
-        
-        // Create and add type display
-        const typeElement = document.createElement('div');
-        typeElement.className = 'region-type';
-        typeElement.textContent = capitalizeFirstLetter(region.type);
-        regionElement.appendChild(typeElement);
-        
-        // Create and add conversion rate display
-        const conversionRateElement = document.createElement('div');
-        conversionRateElement.className = 'region-conversion-rate';
-        const ratePrefix = region.conversionRate >= 0 ? '+' : '';
-        conversionRateElement.textContent = `${ratePrefix}${region.conversionRate.toFixed(1)}/s`;
-        conversionRateElement.style.color = region.conversionRate >= 0 ? '#69db7c' : '#ff6b6b';
-        regionElement.appendChild(conversionRateElement);
-        
-        // Create and add production rate display
-        const prodRateElement = document.createElement('div');
-        prodRateElement.className = 'region-production-rate';
-        prodRateElement.textContent = `+${region.productionRatePerSecond.toFixed(1)} ${capitalizeFirstLetter(region.producedResourceType)}/s`;
-        regionElement.appendChild(prodRateElement);
     }
+    
+    // Always create and add value display (hidden when value = 0)
+    const valueElement = document.createElement('div');
+    valueElement.className = 'region-value';
+    valueElement.textContent = Math.floor(region.currentValue);
+    valueElement.style.display = region.currentValue > 0 ? 'block' : 'none';
+    regionElement.appendChild(valueElement);
+    
+    // Create and add type display (hidden when value = 0)
+    const typeElement = document.createElement('div');
+    typeElement.className = 'region-type';
+    typeElement.textContent = capitalizeFirstLetter(region.type);
+    typeElement.style.display = region.currentValue > 0 ? 'block' : 'none';
+    regionElement.appendChild(typeElement);
+    
+    // Create and add conversion rate display (hidden when value = 0)
+    const conversionRateElement = document.createElement('div');
+    conversionRateElement.className = 'region-conversion-rate';
+    const ratePrefix = region.conversionRate >= 0 ? '+' : '';
+    conversionRateElement.textContent = `${ratePrefix}${region.conversionRate.toFixed(1)}/s`;
+    conversionRateElement.style.color = region.conversionRate >= 0 ? '#69db7c' : '#ff6b6b';
+    conversionRateElement.style.display = region.currentValue > 0 ? 'block' : 'none';
+    regionElement.appendChild(conversionRateElement);
+    
+    // Create and add production rate display (hidden when value = 0)
+    const prodRateElement = document.createElement('div');
+    prodRateElement.className = 'region-production-rate';
+    prodRateElement.textContent = `+${region.productionRatePerSecond.toFixed(1)} ${capitalizeFirstLetter(region.producedResourceType)}/s`;
+    prodRateElement.style.display = region.currentValue > 0 ? 'block' : 'none';
+    regionElement.appendChild(prodRateElement);
+    
+    // Create and add adjacency bonus display (hidden when no bonus)
+    const adjacencyElement = document.createElement('div');
+    adjacencyElement.className = 'region-adjacency-bonus';
+    adjacencyElement.style.display = (region.adjacentConvertedCount > 0) ? 'block' : 'none';
+    if (region.adjacentConvertedCount > 0) {
+        adjacencyElement.textContent = `+${region.adjacencyBonus.toFixed(1)} (${region.adjacentConvertedCount} adj)`;
+    }
+    regionElement.appendChild(adjacencyElement);
     
     // Create intellectual container
     const intellectualContainer = document.createElement('div');
@@ -194,6 +375,14 @@ function createRegionElement(region, gameState) {
         const intellectualBadge = document.createElement('div');
         intellectualBadge.className = 'intellectual-badge';
         intellectualBadge.textContent = region.intellectuals;
+        intellectualBadge.dataset.regionId = region.id;
+        intellectualBadge.title = "Click to move an intellectual";
+        
+        // Make intellectual badge draggable
+        intellectualBadge.addEventListener('mousedown', (e) => {
+            handleIntellectualBadgeClick(e, region.id, gameState);
+        });
+        
         intellectualContainer.appendChild(intellectualBadge);
     }
     
